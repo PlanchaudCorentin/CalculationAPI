@@ -1,9 +1,10 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using API.Models;
+using API.Utils;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
@@ -28,92 +29,105 @@ namespace API.Controllers
         }
         
         
-        [HttpGet("{id}/{from}/{to}")]
-        public async Task<JObject> GetStatFromTo(string id, string from, string to)
+        [HttpGet("{id}/{period}")]
+        public async Task<JObject> GetStatFromTo(string id, string period)
         {
-            var stats = await _context.Stats.Where(
-                    p => p.timestamp >= DateTime.ParseExact(from, "yyyy-MM-ddTHH:mm:ss",null)
-                         && p.timestamp <= DateTime.ParseExact(to, "yyyy-MM-ddTHH:mm:ss",null)
-                         && p.mac_address == id)
-                .ToListAsync();
-            JObject tObject = new JObject();
-            Dictionary<string, JArray> dic = new Dictionary<string, JArray>();
-            foreach (Stat stat in stats)
+            string pattern = @"^[a-z]*";
+            Regex regex = new Regex(pattern, RegexOptions.Compiled);
+            int per = -1;
+            string periodicity = "Hour";
+            switch (period)
             {
-                JArray j;
-                if (dic.TryGetValue(stat.device_type, out j))
-                {
-                    j.Add(stat.calculated_value);
-                }
-                else
-                {
-                    j = new JArray();
-                    j.Add(stat.calculated_value);
-                    dic.Add(stat.device_type, j);
-                }
+                case "day": per = -1; break;
+                case "week": per = -7; break;
+                case "month": per = -30; break;
             }
-            foreach (KeyValuePair<string, JArray> keyValuePair in dic)
+            List<Stat> stats;
+            if (period == "day")
             {
-                tObject.Add(keyValuePair.Key, keyValuePair.Value);
+                stats = await _context.Stats.Where(
+                        p => p.timestamp >= DateTime.Now.AddDays(per)
+                             && p.timestamp <= DateTime.Now
+                             && p.mac_address == id)
+                    .ToListAsync();
             }
-            JObject rObject = new JObject();
-            rObject.Add(id, tObject);
-            
-            
-            return rObject;
+            else if (period == "week")
+            {
+                string sql = $"Call getDeviceAveragesWeek('{id}')";
+                stats = await _context.Stats.FromSql(sql).ToListAsync();
+            }
+            else
+            {
+                string sql = $"call GetDeviceAveragesMonth('{id}')";
+                stats = await _context.Stats.FromSql(sql).ToListAsync();
+            }
+            switch (period)
+            {
+                case "day": periodicity = "Hour"; break;
+                case "week": periodicity = "DayOfWeek"; break;
+                case "month": periodicity = "Day"; break;
+            }
+            return JsonUtils.ToJson(stats, regex, id, periodicity);
         }
-        
-        [HttpGet("{id}")]
-        public async Task<JObject> GetStatForId(string id)
+
+        [HttpGet("{id}/{type}/{period}")]
+        public async Task<JObject> GetStatDTFromTo(string id, string type, string period)
         {
-            var stats = await _context.Stats.Where(p => p.mac_address == id).ToListAsync();
-            JObject tObject = new JObject();
-            Dictionary<string, JArray> dic = new Dictionary<string, JArray>();
-            foreach (Stat stat in stats)
+            string pattern = @"^[a-z]*";
+            Regex regex = new Regex(pattern, RegexOptions.Compiled);
+            int per = -1;
+            string periodicity = "Hour";
+            switch (period)
             {
-                JArray j;
-                if (dic.TryGetValue(stat.device_type, out j))
-                {
-                    j.Add(stat.calculated_value);
-                }
-                else
-                {
-                    j = new JArray();
-                    j.Add(stat.calculated_value);
-                    dic.Add(stat.device_type, j);
-                }
+                case "day": per = -1; break;
+                case "week": per = -7; break;
+                case "month": per = -30; break;
             }
-            foreach (KeyValuePair<string, JArray> keyValuePair in dic)
+            List<Stat> stats;
+            if (period == "day")
             {
-                tObject.Add(keyValuePair.Key, keyValuePair.Value);
+                stats= await _context.Stats.Where(
+                        p => p.timestamp >= DateTime.Now.AddDays(per)
+                             && p.timestamp <= DateTime.Now
+                             && p.mac_address == id
+                             && p.device_type == type)
+                    .ToListAsync();
             }
-            JObject rObject = new JObject();
-            rObject.Add(id, tObject);
             
             
-            return rObject;
-        }
-        
-        [HttpGet("{id}/{type}/{from}/{to}")]
-        public async Task<JObject> GetStatDTFromTo(string id, string type, string from, string to)
-        {
-            var stats = await _context.Stats.Where(
-                    p => p.timestamp >= DateTime.ParseExact(from, "yyyy-MM-ddTHH:mm:ss",null)
-                         && p.timestamp <= DateTime.ParseExact(to, "yyyy-MM-ddTHH:mm:ss",null)
-                         && p.mac_address == id
-                         && p.device_type == type)
-                .ToListAsync();
+            else if (period == "week")
+            {
+                string sql = $"CALL GetDeviceAveragesWeekByType('{id}', '{type}')";
+                stats = await _context.Stats.FromSql(sql).ToListAsync();
+            }
+            else
+            {
+                string sql = $"CALL GetDeviceAveragesMonthByType('{id}', '{type}')";
+                stats = await _context.Stats.FromSql(sql).ToListAsync();
+            }
+            switch (period)
+            {
+                case "day": periodicity = "Hour"; break;
+                case "week": periodicity = "DayOfWeek"; break;
+                case "month": periodicity = "Day"; break;
+            }
+            
             JObject tObject = new JObject();
             JArray store = new JArray();
             foreach (Stat stat in stats)
             {
-                store.Add(stat.calculated_value);
+                JObject o  = new JObject();
+                o.Add(regex.Match(stat.device_type).Groups[0].Value, stat.calculated_value);
+                o.Add(periodicity, (int) stat.timestamp.GetType().GetProperty(periodicity).GetValue(stat.timestamp));
+                store.Add(o);
             }
             tObject.Add(type, store);
             JObject rObject = new JObject();
             rObject.Add(id, tObject);
 
             return rObject;
-        } 
+        }
+
+        
     }
 }
