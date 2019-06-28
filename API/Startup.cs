@@ -28,7 +28,7 @@ namespace API
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddDbContext<StatContext>(opt =>
-                opt.UseMySQL("server=192.168.1.30;database=statistics;port=3306;user=dev;password=devproject"));
+                opt.UseMySQL("server=192.168.43.146;database=statistics;port=3306;user=dev;password=devproject"));
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
         }
 

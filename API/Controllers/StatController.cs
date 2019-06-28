@@ -118,7 +118,8 @@ namespace API.Controllers
             {
                 JObject o  = new JObject();
                 o.Add(regex.Match(stat.device_type).Groups[0].Value, stat.calculated_value);
-                o.Add(periodicity, (int) stat.timestamp.GetType().GetProperty(periodicity).GetValue(stat.timestamp));
+                Console.WriteLine(stat.timestamp);
+                o.Add(periodicity, stat.timestamp.ToString());
                 store.Add(o);
             }
             tObject.Add(type, store);
